@@ -1,12 +1,29 @@
 [BlueFerry Plugin]
 Id=io.weirdware.blueferry.immich_photos
 Name=Immich photos
-Version=0.1.0
-ApiVersion=1
+Version=0.2.0
+ApiVersion=1.1
 MinBlueFerry=0.8
 Capabilities=photos;
-Homepage=https://github.com/erikwb/blueferry/blob/main/PLUGINS.md
-Source=https://github.com/erikwb/blueferry
+Homepage=https://github.com/joshii-h/blueferry-plugin-immich
+Source=https://github.com/joshii-h/blueferry-plugin-immich
 Exec=blueferry-immich-photos serve
 Cli=blueferry-immich-photos
 Alias=immich
+
+[Config url]
+Label=Server URL
+Type=url
+Required=true
+Help=Your Immich address, for example https://photos.example.org
+
+[Config api_key]
+Label=API key
+Type=secret
+Required=true
+Help=Immich > Account Settings > API Keys, with asset.read, asset.view and asset.download
+
+[Config camera_model]
+Label=Camera model
+Type=string
+Help=Optional: only list photos from this camera, for example iPhone 16 Pro

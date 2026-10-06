@@ -304,3 +304,53 @@ def test_plugin_imports_only_the_plugin_api_from_blueferry() -> None:
             for module in modules:
                 if module == "blueferry" or module.startswith("blueferry."):
                     assert module.startswith("blueferry.plugin_api"), (path.name, module)
+
+
+def test_manifest_describes_the_settings_form() -> None:
+    manifest = parse_manifest(manifest_text())
+    assert manifest.api_minor == 1 and manifest.version == "0.2.0"
+    fields = {field.key: field for field in manifest.config}
+    assert list(fields) == ["url", "api_key", "camera_model"]
+    assert fields["url"].type == "url" and fields["url"].required
+    assert fields["api_key"].secret and fields["api_key"].required
+    assert not fields["camera_model"].required
+
+
+def test_settings_form_checks_the_key_and_never_reveals_it(plugin) -> None:
+    from blueferry.plugin_api.config import SECRET_MASK
+
+    store, server, _service, client = plugin
+    result = client.set_config({"url": "https://photos.example.org"})
+    assert not result.ok and result.errors == {"api_key": "is required"}
+    server.status = 401
+    result = client.set_config({"url": "https://photos.example.org", "api_key": "bad"})
+    assert result.errors == {"api_key": "the API key was rejected"}
+    assert store.load() is None
+    server.status = 200
+    result = client.set_config({"url": "https://photos.example.org/", "api_key": "k3y",
+                                "camera_model": "iPhone 16 Pro"})
+    assert result.ok, result.errors
+    settings = store.load()
+    assert settings.url == "https://photos.example.org"
+    assert settings.camera_model == "iPhone 16 Pro" and store.api_key(settings) == "k3y"
+    shown = client.get_config()
+    assert shown == {"url": "https://photos.example.org", "api_key": SECRET_MASK,
+                     "camera_model": "iPhone 16 Pro"}
+    result = client.set_config({"url": "http://photos.example.org"})
+    assert list(result.errors) == ["url"] and "https://" in result.errors["url"]
+
+
+def test_a_new_url_keeps_the_stored_key_in_the_same_keyring_entry(plugin) -> None:
+    """A configuration made with `setup` (0.1) keeps working after the move."""
+    store, _server, _service, client = plugin
+    store.save(Settings("https://old.example.org", "keyring"), "k3y")
+    secret = store._secret
+    assert ("io.weirdware.blueferry.immich_photos.ApiKey",
+            (("server", "https://old.example.org"),)) in secret.items
+    assert client.get_config()["api_key"] == "********"
+    result = client.set_config({"url": "https://new.example.org", "api_key": "********"})
+    assert result.ok, result.errors
+    settings = store.load()
+    assert settings.url == "https://new.example.org" and store.api_key(settings) == "k3y"
+    assert [attributes for _schema, attributes in secret.items] == [
+        (("server", "https://new.example.org"),)]

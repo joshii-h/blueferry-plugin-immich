@@ -6,16 +6,20 @@ import threading
 from collections.abc import Callable
 from typing import Any
 
+from blueferry.plugin_api.config import ConfigError
 from blueferry.plugin_api.manifest import PluginManifest
 from blueferry.plugin_api.service import PhotosService, PluginCallError
 
 from blueferry_immich_photos.cache import PhotoCache
-from blueferry_immich_photos.immich import Asset, ImmichClient, ImmichError
-from blueferry_immich_photos.settings import SettingsError, SettingsStore
+from blueferry_immich_photos.immich import Asset, ImmichClient, ImmichError, normalize_url
+from blueferry_immich_photos.settings import Settings, SettingsError, SettingsStore
 
 log = logging.getLogger(__name__)
 
-SETUP_HINT = "run: blueferry plugins immich setup --url https://your-immich-server"
+SETUP_HINT = (
+    "set the server URL and API key in BlueFerry's settings (Plugins), or run: "
+    "blueferry plugins immich setup --url https://your-immich-server"
+)
 _ERROR_TEXT = {
     "unauthorized": "the API key was rejected",
     "forbidden": "the API key lacks asset.read, asset.view or asset.download",
@@ -80,6 +84,75 @@ class ImmichPhotosService(PhotosService):
                 "detail": _ERROR_TEXT.get(self._last_error, self._last_error),
             }
         return {"state": "ok", "server": server}
+
+    # ---- settings (Plugin1.GetConfig/SetConfig) ------------------------------
+
+    def config_values(self) -> dict[str, object]:
+        """Worker thread. The stored URL and camera model; the key only as set/unset."""
+        try:
+            settings = self._settings.load()
+        except SettingsError as error:
+            raise PluginCallError(str(error)) from None
+        if settings is None:
+            return {}
+        try:
+            stored = bool(self._settings.api_key(settings))
+        except SettingsError:
+            stored = False
+        return {"url": settings.url, "api_key": stored, "camera_model": settings.camera_model}
+
+    def apply_config(self, values: dict[str, object]) -> None:
+        """Worker thread. Check the key against the server, then store it.
+
+        The keyring entry stays keyed by the server URL (the same entry
+        ``setup`` writes), so a configuration made with ``setup`` keeps
+        working. Without a new key, the stored one moves with a changed URL.
+        """
+        try:
+            url = normalize_url(str(values.get("url") or ""))
+        except ImmichError:
+            raise ConfigError("url", "must start with https:// (http only for localhost)") from None
+        model = str(values.get("camera_model") or "")
+        try:
+            current = self._settings.load()
+        except SettingsError:
+            current = None
+        key = str(values.get("api_key") or "")
+        if not key and current is not None:
+            try:
+                key = self._settings.api_key(current)
+            except SettingsError:
+                key = ""
+        if not key:
+            raise ConfigError("api_key", "is required")
+        if any(ch.isspace() for ch in key) or len(key) > 512:
+            raise ConfigError("api_key", "does not look like an API key")
+        changed = (
+            current is None or current.url != url or current.camera_model != model
+            or "api_key" in values
+        )
+        if not changed:
+            return
+        try:
+            self._client_factory(url, key).recent(1, camera_model=model)
+        except ImmichError as error:
+            field = "api_key" if error.token in ("unauthorized", "forbidden") else "url"
+            raise ConfigError(field, _ERROR_TEXT.get(error.token, error.token)) from None
+        prefer_keyring = current is None or current.key_store != "file"
+        try:
+            self._settings.save(
+                Settings(url=url, key_store="keyring", camera_model=model), key,
+                prefer_keyring=prefer_keyring,
+            )
+        except (SettingsError, OSError) as error:
+            raise ConfigError("", f"could not store the settings: {error}") from None
+        if current is not None and current.url != url and current.key_store == "keyring":
+            self._settings.forget_keyring(current.url)
+        with self._lock:
+            self._last_error = ""
+            self._assets.clear()
+            self._newest = None
+        log.info("settings saved through the settings form")
 
     def list_recent(self, limit: int) -> list[dict[str, object]]:
         client, model = self._client()

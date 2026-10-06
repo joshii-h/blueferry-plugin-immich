@@ -148,6 +148,16 @@ class SettingsStore:
         self.key_path.unlink(missing_ok=True)
         self.config_path.unlink(missing_ok=True)
 
+    def forget_keyring(self, url: str) -> None:
+        """Drop the keyring entry of a server URL that is no longer used."""
+        secret = self._module()
+        if secret is None:
+            return
+        try:
+            secret.password_clear_sync(self._schema(secret), {"server": url}, None)
+        except Exception:  # nosec B110 - best effort
+            pass
+
     # ---- libsecret -------------------------------------------------------------
 
     def _module(self) -> Any:
