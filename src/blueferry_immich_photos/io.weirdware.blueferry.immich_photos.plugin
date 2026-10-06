@@ -1,0 +1,12 @@
+[BlueFerry Plugin]
+Id=io.weirdware.blueferry.immich_photos
+Name=Immich photos
+Version=0.1.0
+ApiVersion=1
+MinBlueFerry=0.8
+Capabilities=photos;
+Homepage=https://github.com/erikwb/blueferry/blob/main/PLUGINS.md
+Source=https://github.com/erikwb/blueferry
+Exec=blueferry-immich-photos serve
+Cli=blueferry-immich-photos
+Alias=immich
