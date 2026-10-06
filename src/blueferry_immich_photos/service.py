@@ -8,6 +8,7 @@ from typing import Any
 
 from blueferry.plugin_api.manifest import PluginManifest
 from blueferry.plugin_api.service import PhotosService, PluginCallError
+
 from blueferry_immich_photos.cache import PhotoCache
 from blueferry_immich_photos.immich import Asset, ImmichClient, ImmichError
 from blueferry_immich_photos.settings import SettingsError, SettingsStore

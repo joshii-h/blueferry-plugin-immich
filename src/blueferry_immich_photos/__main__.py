@@ -12,6 +12,7 @@ from pathlib import Path
 
 from blueferry.plugin_api.manifest import ManifestError, default_directories, parse_manifest
 from blueferry.plugin_api.service import run
+
 from blueferry_immich_photos import PLUGIN_ID, manifest_text
 from blueferry_immich_photos.immich import ImmichClient, ImmichError, normalize_url
 from blueferry_immich_photos.service import _ERROR_TEXT, ImmichPhotosService

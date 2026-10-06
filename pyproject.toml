@@ -4,16 +4,25 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "blueferry-immich-photos"
-version = "0.1.0"
+version = "0.2.0"
 description = "BlueFerry plugin: recent photos from a self-hosted Immich server"
+readme = "README.md"
 license = {text = "GPL-2.0-or-later"}
 requires-python = ">=3.10"
 # Only blueferry.plugin_api is used. dbus-python, PyGObject and libsecret
-# come from the distribution, as for BlueFerry itself.
-dependencies = ["blueferry>=0.8"]
+# come from the distribution (BlueFerry creates the plugin's venv with
+# --system-site-packages).
+# The ref is a branch for now; switch it to a BlueFerry release tag.
+dependencies = [
+  "blueferry-plugin-api @ git+https://github.com/joshii-h/blueferry@local/battlestation#subdirectory=plugin-api",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "ruff>=0.5"]
 
 [project.urls]
-Homepage = "https://github.com/erikwb/blueferry/blob/main/PLUGINS.md"
+Homepage = "https://github.com/joshii-h/blueferry-plugin-immich"
+Source = "https://github.com/joshii-h/blueferry-plugin-immich"
 
 [project.scripts]
 blueferry-immich-photos = "blueferry_immich_photos.__main__:main"
@@ -23,3 +32,19 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "blueferry_immich_photos" = ["*.plugin"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "RUF"]
+ignore = ["B904", "RUF005"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["blueferry_immich_photos"]
+known-third-party = ["blueferry"]
