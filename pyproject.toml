@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "blueferry-immich-photos"
+version = "0.1.0"
+description = "BlueFerry plugin: recent photos from a self-hosted Immich server"
+license = {text = "GPL-2.0-or-later"}
+requires-python = ">=3.10"
+# Only blueferry.plugin_api is used. dbus-python, PyGObject and libsecret
+# come from the distribution, as for BlueFerry itself.
+dependencies = ["blueferry>=0.8"]
+
+[project.urls]
+Homepage = "https://github.com/erikwb/blueferry/blob/main/PLUGINS.md"
+
+[project.scripts]
+blueferry-immich-photos = "blueferry_immich_photos.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"blueferry_immich_photos" = ["*.plugin"]
