@@ -27,6 +27,12 @@ def _data_home() -> Path:
 
 def _command() -> list[str]:
     """How the bus and BlueFerry should start this plugin."""
+    # The entry point of the environment running now first: inside the venv
+    # that `blueferry plugins install` built, PATH may still lead to an older
+    # copy (for example one pip-installed next to BlueFerry).
+    beside = Path(sys.executable).parent / ENTRY_POINT
+    if beside.is_file() and os.access(beside, os.X_OK):
+        return [str(beside)]
     installed = shutil.which(ENTRY_POINT)
     if installed:
         return [installed]

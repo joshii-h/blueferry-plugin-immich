@@ -354,3 +354,16 @@ def test_a_new_url_keeps_the_stored_key_in_the_same_keyring_entry(plugin) -> Non
     assert settings.url == "https://new.example.org" and store.api_key(settings) == "k3y"
     assert [attributes for _schema, attributes in secret.items] == [
         (("server", "https://new.example.org"),)]
+
+
+def test_activation_prefers_the_running_environment(tmp_path, monkeypatch) -> None:
+    venv_bin = tmp_path / "venv" / "bin"
+    venv_bin.mkdir(parents=True)
+    script = venv_bin / "blueferry-immich-photos"
+    script.write_text("#!/bin/sh\n")
+    script.chmod(0o755)
+    monkeypatch.setattr("sys.executable", str(venv_bin / "python"))
+    monkeypatch.setattr("shutil.which", lambda _name: "/home/me/.local/bin/blueferry-immich-photos")
+    assert cli._command() == [str(script)]
+    script.unlink()
+    assert cli._command() == ["/home/me/.local/bin/blueferry-immich-photos"]

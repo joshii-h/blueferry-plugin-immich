@@ -11,7 +11,7 @@ session bus and talks to BlueFerry only through `blueferry.plugin_api`
 
 ## Install
 
-With BlueFerry 0.8.1 or newer:
+With a BlueFerry that has plugin management (`blueferry plugins install`):
 
 ```sh
 blueferry plugins install https://github.com/joshii-h/blueferry-plugin-immich
