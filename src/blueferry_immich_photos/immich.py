@@ -129,6 +129,21 @@ class ImmichClient:
             raise ImmichError("bad-response")
         return [asset for asset in map(_asset, items) if asset is not None]
 
+    def asset(self, asset_id: str) -> Asset:
+        """One asset's metadata (``GET /api/assets/{id}``, ``asset.read``)."""
+        _check_id(asset_id)
+        with self._call(
+            self._request(f"/api/assets/{asset_id}", accept="application/json"), TIMEOUT_SEC,
+        ) as response:
+            raw = _read_limited(response, MAX_JSON_BYTES)
+        try:
+            found = _asset(json.loads(raw))
+        except ValueError:
+            raise ImmichError("bad-response") from None
+        if found is None or found.id != asset_id:
+            raise ImmichError("not-found")
+        return found
+
     def thumbnail(self, asset_id: str) -> bytes:
         _check_id(asset_id)
         request = self._request(

@@ -38,11 +38,23 @@ def _private_dir(path: Path) -> Path:
     return path
 
 
-def safe_file_name(name: str, asset_id: str) -> str:
-    """The server's file name, reduced to something harmless."""
+# Originals are opened with the desktop's default handler, so the extension
+# decides which program runs. Only media extensions are kept.
+_EXTENSIONS = {
+    "image": frozenset({".jpg", ".jpeg", ".png", ".heic", ".heif", ".webp", ".gif",
+                        ".tif", ".tiff", ".dng", ".avif", ".jxl", ".bmp"}),
+    "video": frozenset({".mov", ".mp4", ".m4v", ".3gp", ".webm", ".mkv", ".avi"}),
+}
+_DEFAULT_EXTENSION = {"image": ".jpg", "video": ".mov"}
+
+
+def safe_file_name(name: str, asset_id: str, kind: str = "image") -> str:
+    """The server's file name, reduced to something harmless to open."""
     base = os.path.basename(name.replace("\\", "/")).strip().lstrip(".")
-    base = _SAFE_NAME.sub("_", base)[:120]
-    return base or asset_id
+    stem, extension = os.path.splitext(_SAFE_NAME.sub("_", base))
+    if extension.lower() not in _EXTENSIONS.get(kind, frozenset()):
+        extension = _DEFAULT_EXTENSION.get(kind, ".bin")
+    return (stem[:100] or asset_id) + extension.lower()
 
 
 class PhotoCache:
@@ -96,10 +108,11 @@ class PhotoCache:
 
     def store_original(
         self, asset_id: str, file_name: str, writer: Callable[[IO[bytes]], object],
+        *, kind: str = "image",
     ) -> Path:
         self._check(asset_id)
         folder = _private_dir(self._dir("originals") / asset_id)
-        path = folder / safe_file_name(file_name, asset_id)
+        path = folder / safe_file_name(file_name, asset_id, kind)
         self._write(folder, path, writer)
         self.prune("originals", self.original_budget, keep=path)
         return path

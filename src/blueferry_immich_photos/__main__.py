@@ -96,10 +96,14 @@ def setup(args: argparse.Namespace, store: SettingsStore | None = None) -> int:
         except ImmichError as error:
             print(f"Check failed: {_ERROR_TEXT.get(error.token, error.token)}.", file=sys.stderr)
             return 1
-    where = store.save(
-        Settings(url=url, key_store="keyring", camera_model=args.camera_model or ""),
-        key, prefer_keyring=not args.key_file,
-    )
+    try:
+        where = store.save(
+            Settings(url=url, key_store="keyring", camera_model=args.camera_model or ""),
+            key, prefer_keyring=not args.key_file,
+        )
+    except (SettingsError, OSError) as error:
+        print(f"Could not store the settings: {error}", file=sys.stderr)
+        return 1
     print("API key stored in the desktop keyring." if where == "keyring"
           else f"API key stored in {store.key_path} (owner-only).")
     for path in install_activation():

@@ -44,7 +44,7 @@ class ImmichPhotosService(PhotosService):
         self._cache = cache or PhotoCache()
         self._client_factory = client_factory
         self._lock = threading.Lock()
-        self._names: dict[str, str] = {}
+        self._assets: dict[str, Asset] = {}
         self._newest: str | None = None
         self._last_error = ""
 
@@ -82,22 +82,24 @@ class ImmichPhotosService(PhotosService):
 
     def list_recent(self, limit: int) -> list[dict[str, object]]:
         client, model = self._client()
+        # Network and disk work stay outside the lock: a long download must
+        # not hold up a listing. The cache writes atomically on its own.
+        try:
+            assets = client.recent(limit, camera_model=model)[:limit]
+        except ImmichError as error:
+            raise self._failed(error) from None
         with self._lock:
-            try:
-                assets = client.recent(limit, camera_model=model)
-            except ImmichError as error:
-                raise self._failed(error) from None
             self._last_error = ""
-            entries = [self._entry(client, asset) for asset in assets[:limit]]
+            self._assets.update((asset.id, asset) for asset in assets)
             newest = assets[0].id if assets else ""
             changed = self._newest is not None and newest != self._newest
             self._newest = newest
+        entries = [self._entry(client, asset) for asset in assets]
         if changed:
             self._to_main(self.Changed)
         return entries
 
     def _entry(self, client: ImmichClient, asset: Asset) -> dict[str, object]:
-        self._names[asset.id] = asset.file_name
         thumbnail = self._cache.thumbnail(asset.id)
         if thumbnail is None:
             try:
@@ -123,11 +125,16 @@ class ImmichPhotosService(PhotosService):
             return str(cached)
         client, _model = self._client()
         with self._lock:
-            name = self._names.get(photo_id, "")
-            try:
-                path = self._cache.store_original(
-                    photo_id, name, lambda stream: client.download_original(photo_id, stream),
-                )
-            except ImmichError as error:
-                raise self._failed(error) from None
+            asset = self._assets.get(photo_id)
+        try:
+            if asset is None:
+                # Not listed by this process (it may have idled out since).
+                asset = client.asset(photo_id)
+            path = self._cache.store_original(
+                photo_id, asset.file_name,
+                lambda stream: client.download_original(photo_id, stream),
+                kind=asset.type,
+            )
+        except ImmichError as error:
+            raise self._failed(error) from None
         return str(path)
