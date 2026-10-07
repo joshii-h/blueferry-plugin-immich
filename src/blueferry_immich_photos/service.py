@@ -9,6 +9,12 @@ from typing import Any
 from blueferry.plugin_api.config import ConfigError
 from blueferry.plugin_api.manifest import PluginManifest
 from blueferry.plugin_api.service import PhotosService, PluginCallError
+from blueferry_plugin_kit.configtest import (
+    ConfigTestResult,
+    connected,
+    passed,
+    secret_or_stored,
+)
 
 from blueferry_immich_photos.cache import PhotoCache
 from blueferry_immich_photos.immich import Asset, ImmichClient, ImmichError, normalize_url
@@ -30,6 +36,16 @@ _ERROR_TEXT = {
     "bad-response": "the server's answer was not understood",
     "redirect": "the server redirected; check the URL",
     "invalid-url": "the configured URL is not https",
+}
+
+_TEST_TEXT = {
+    "network": "The server could not be reached.",
+    "redirect": "The server redirects; enter the address you end up at.",
+    "not-found": "No Immich server answers at this address.",
+    "bad-response": "No Immich server answers at this address.",
+    "server-error": "The Immich server reported an error.",
+    "too-large": "The server sent more data than allowed.",
+    "url": "No Immich server answers at this address.",
 }
 
 
@@ -153,6 +169,53 @@ class ImmichPhotosService(PhotosService):
             self._assets.clear()
             self._newest = None
         log.info("settings saved through the settings form")
+
+    def test_config(self, values: dict[str, object]) -> ConfigTestResult:
+        """Worker thread. "Test connection": check URL and key, store nothing.
+
+        The search (``asset.read``) and one thumbnail (``asset.view``) prove
+        the key can list photos; the server version is public and the user
+        name needs ``user.read``, which the key may lack.
+        """
+        try:
+            url = normalize_url(str(values.get("url") or ""))
+        except ImmichError:
+            raise ConfigError("url", "Use https:// (http only for localhost).") from None
+
+        def stored() -> str | None:
+            current = self._settings.load()
+            return self._settings.api_key(current) if current is not None else None
+
+        key = secret_or_stored(values, "api_key", stored)
+        client = self._client_factory(url, key)
+        try:
+            version = client.server_version()
+        except ImmichError as error:
+            if error.token not in ("not-found", "bad-response"):
+                raise ConfigError(
+                    "url", _TEST_TEXT.get(error.token, _TEST_TEXT["url"]),
+                ) from None
+            version = ""   # Immich before 1.107 has no /api/server/version
+        permission = "asset.read"
+        try:
+            assets = client.recent(1, camera_model=str(values.get("camera_model") or ""))
+            permission = "asset.view"
+            if assets:
+                client.thumbnail(assets[0].id)
+        except ImmichError as error:
+            if error.token == "unauthorized":
+                raise ConfigError("api_key", "The server refused the API key.") from None
+            if error.token == "forbidden":
+                raise ConfigError(
+                    "api_key", f"The API key lacks the permission {permission}.",
+                ) from None
+            raise ConfigError("url", _TEST_TEXT.get(error.token, _TEST_TEXT["url"])) from None
+        try:
+            user = client.user_name()
+        except ImmichError:
+            user = ""   # no user.read: fine, the photos work
+        log.info("settings tested")
+        return passed(connected(user or None, "Immich", version))
 
     def list_recent(self, limit: int) -> list[dict[str, object]]:
         client, model = self._client()

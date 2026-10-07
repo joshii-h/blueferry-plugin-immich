@@ -8,6 +8,9 @@ Endpoints, all with the ``x-api-key`` header:
   know only these. Needs the key permission ``asset.read``.
 * ``GET /api/assets/{id}/thumbnail?size=thumbnail`` (``asset.view``).
 * ``GET /api/assets/{id}/original`` (``asset.download``).
+* For "Test connection": ``GET /api/server/version`` (public) and
+  ``GET /api/users/me`` (``user.read``, optional: without it the test
+  names no user).
 
 Every request has a timeout, redirects are refused (they would carry the API
 key to another host), and every response body has a size limit. Errors are
@@ -128,6 +131,35 @@ class ImmichClient:
         if not isinstance(items, list):
             raise ImmichError("bad-response")
         return [asset for asset in map(_asset, items) if asset is not None]
+
+    def _json(self, path: str) -> object:
+        with self._call(self._request(path, accept="application/json"), TIMEOUT_SEC) as response:
+            raw = _read_limited(response, MAX_JSON_BYTES)
+        try:
+            return json.loads(raw)
+        except ValueError:
+            raise ImmichError("bad-response") from None
+
+    def server_version(self) -> str:
+        """``1.135.3`` from ``GET /api/server/version``."""
+        value = self._json("/api/server/version")
+        if not isinstance(value, dict):
+            raise ImmichError("bad-response")
+        parts = [value.get(key) for key in ("major", "minor", "patch")]
+        if not all(isinstance(part, int) and not isinstance(part, bool) for part in parts):
+            raise ImmichError("bad-response")
+        return ".".join(str(part) for part in parts)
+
+    def user_name(self) -> str:
+        """The key owner's name, else e-mail (``GET /api/users/me``)."""
+        value = self._json("/api/users/me")
+        if not isinstance(value, dict):
+            raise ImmichError("bad-response")
+        for key in ("name", "email"):
+            text = value.get(key)
+            if isinstance(text, str) and text.strip():
+                return text.strip()
+        return ""
 
     def asset(self, asset_id: str) -> Asset:
         """One asset's metadata (``GET /api/assets/{id}``, ``asset.read``)."""
