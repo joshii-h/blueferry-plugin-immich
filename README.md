@@ -31,11 +31,16 @@ confirm. The plugin gets its own virtual environment below
    permissions **asset.read**, **asset.view** and **asset.download**
    (nothing else is needed).
 2. In BlueFerry's settings, Plugins > Immich photos > Settings, enter the
-   server URL and the key. Or on the command line:
+   server URL and the key (section "Account"; the "Where do I find this?"
+   link opens Immich's documentation). **Test connection** checks both
+   without saving and answers e.g. "Connected as Anna to Immich 1.135.3",
+   or marks the field that is wrong (refused key, missing permission,
+   no Immich at that address). Or on the command line:
 
    ```sh
    blueferry plugins config io.weirdware.blueferry.immich_photos \
        --set url=https://photos.example.org --secret api_key
+   blueferry plugins config io.weirdware.blueferry.immich_photos --test
    ```
 
    The older `blueferry plugins immich setup --url https://photos.example.org`
@@ -65,8 +70,11 @@ python3 -m venv --system-site-packages .venv   # dbus-python, PyGObject, libsecr
 .venv/bin/ruff check . && .venv/bin/python -m pytest -q
 ```
 
-`blueferry-plugin-api` comes from the `plugin-api` directory of the
-BlueFerry repository. Tests use fake HTTP, keyring and cache; the plugin has
+`blueferry-plugin-api` (tag `plugin-api-v1.3.0`, the guided settings form
+and `TestConfig`) comes from the `plugin-api` directory of the BlueFerry
+repository, shared helpers from `blueferry-plugin-kit` (`kit-v0.2.0`). The
+settings form needs a BlueFerry with plugin API 1.3; older ones ignore the
+plugin with a message. Tests use fake HTTP, keyring and cache; the plugin has
 not been tested against a live Immich server yet.
 
 ## License
