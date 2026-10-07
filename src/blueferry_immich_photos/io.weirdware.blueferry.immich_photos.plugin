@@ -1,7 +1,7 @@
 [BlueFerry Plugin]
 Id=io.weirdware.blueferry.immich_photos
 Name=Immich photos
-Version=0.2.0
+Version=0.2.1
 ApiVersion=1.1
 MinBlueFerry=0.8
 Capabilities=photos;
