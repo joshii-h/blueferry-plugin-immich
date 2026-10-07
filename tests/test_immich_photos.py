@@ -30,6 +30,8 @@ from blueferry_immich_photos.settings import Settings, SettingsError, SettingsSt
 
 ID_A = "3f1c2d4e-0000-4000-8000-00000000000a"
 ID_B = "3f1c2d4e-0000-4000-8000-00000000000b"
+# Immich keys: 32 random bytes as base64 without + / = (randomBytesAsText).
+KEY = "Qm9vZ2llV29vZ2llQm9vZ2llV29vZ2llQm9vZ2ll12"
 
 
 class _Response(io.BytesIO):
@@ -52,14 +54,22 @@ class _Server:
             {"id": "bad id", "type": "IMAGE"},
         ]
         self.status = status
+        self.statuses: dict[str, int] = {}   # path suffix -> status
+        self.user: dict = {"name": "Anna", "email": "anna@example.org"}
         self.requests: list = []
 
     def __call__(self, request, timeout):
         self.requests.append(request)
         assert timeout <= 60
-        if self.status != 200:
-            raise urllib.error.HTTPError(request.full_url, self.status, "x", {}, None)
         url = request.full_url
+        status = next((code for suffix, code in self.statuses.items() if suffix in url),
+                      self.status)
+        if status != 200:
+            raise urllib.error.HTTPError(request.full_url, status, "x", {}, None)
+        if url.endswith("/api/server/version"):
+            return _Response(b'{"major": 1, "minor": 135, "patch": 3}')
+        if url.endswith("/api/users/me"):
+            return _Response(json.dumps(self.user).encode())
         if url.endswith("/api/search/metadata"):
             return _Response(json.dumps({"assets": {"items": self.items}}).encode())
         if "/thumbnail" in url:
@@ -281,12 +291,15 @@ def test_plugin_imports_only_the_plugin_api_from_blueferry() -> None:
 
 def test_manifest_describes_the_settings_form() -> None:
     manifest = parse_manifest(manifest_text())
-    assert manifest.api_minor == 1 and manifest.version == "0.2.2"
+    assert manifest.api_minor == 3 and manifest.config_test and not manifest.config_login
     fields = {field.key: field for field in manifest.config}
     assert list(fields) == ["url", "api_key", "camera_model"]
     assert fields["url"].type == "url" and fields["url"].required
     assert fields["api_key"].secret and fields["api_key"].required
     assert not fields["camera_model"].required
+    assert [fields[key].group for key in fields] == ["account", "account", "options"]
+    assert fields["api_key"].help_url.startswith("https://docs.immich.app/")
+    assert fields["url"].placeholder and fields["camera_model"].placeholder
 
 
 def test_settings_form_checks_the_key_and_never_reveals_it(plugin) -> None:
@@ -296,16 +309,18 @@ def test_settings_form_checks_the_key_and_never_reveals_it(plugin) -> None:
     result = client.set_config({"url": "https://photos.example.org"})
     assert not result.ok and result.errors == {"api_key": "is required"}
     server.status = 401
-    result = client.set_config({"url": "https://photos.example.org", "api_key": "bad"})
+    result = client.set_config({"url": "https://photos.example.org", "api_key": "bad key"})
+    assert result.errors == {"api_key": "Copy the whole key without spaces."}
+    result = client.set_config({"url": "https://photos.example.org", "api_key": KEY + "x"})
     assert result.errors == {"api_key": "the API key was rejected"}
     assert store.load() is None
     server.status = 200
-    result = client.set_config({"url": "https://photos.example.org/", "api_key": "k3y",
+    result = client.set_config({"url": "https://photos.example.org/", "api_key": KEY,
                                 "camera_model": "iPhone 16 Pro"})
     assert result.ok, result.errors
     settings = store.load()
     assert settings.url == "https://photos.example.org"
-    assert settings.camera_model == "iPhone 16 Pro" and store.api_key(settings) == "k3y"
+    assert settings.camera_model == "iPhone 16 Pro" and store.api_key(settings) == KEY
     shown = client.get_config()
     assert shown == {"url": "https://photos.example.org", "api_key": SECRET_MASK,
                      "camera_model": "iPhone 16 Pro"}
@@ -340,3 +355,73 @@ def test_activation_prefers_the_running_environment(tmp_path, monkeypatch) -> No
     assert cli._command() == [str(script)]
     script.unlink()
     assert cli._command() == ["/home/me/.local/bin/blueferry-immich-photos"]
+
+
+# ---- "Test connection" (TestConfig, ApiVersion 1.3) -------------------------------
+
+
+@pytest.fixture
+def host(plugin):
+    from blueferry_plugin_kit.testing import FakeHost
+
+    store, server, service, _client = plugin
+    return store, server, FakeHost(service)
+
+
+def test_test_config_names_user_and_version_and_stores_nothing(host, caplog) -> None:
+    caplog.set_level("DEBUG")
+    store, server, fake = host
+    result = fake.test_config({"url": "https://photos.example.org", "api_key": KEY})
+    assert result == {"ok": True, "message": "Connected as Anna to Immich 1.135.3"}
+    assert store.load() is None
+    assert all(r.get_header("X-api-key") == KEY for r in server.requests)
+    assert any("/thumbnail" in r.full_url for r in server.requests)
+    server.user = {"name": "", "email": "anna@example.org"}
+    result = fake.test_config({"url": "https://photos.example.org", "api_key": KEY})
+    assert result["message"] == "Connected as anna@example.org to Immich 1.135.3"
+    fake.assert_never_sent(KEY)
+    assert KEY not in caplog.text
+
+
+def test_test_config_uses_the_stored_key(host) -> None:
+    store, server, fake = host
+    store.save(Settings("https://photos.example.org", "keyring"), KEY)
+    result = fake.test_config({"url": "https://photos.example.org", "api_key": "********"})
+    assert result["ok"] is True
+    assert server.requests[-1].get_header("X-api-key") == KEY
+    store.forget()
+    result = fake.test_config({"url": "https://photos.example.org"})
+    assert result["ok"] is False and result["errors"] == {"api_key": "is required"}
+
+
+def test_test_config_without_user_read_still_passes(host) -> None:
+    _store, server, fake = host
+    server.statuses["/api/users/me"] = 403
+    result = fake.test_config({"url": "https://photos.example.org", "api_key": KEY})
+    assert result == {"ok": True, "message": "Connected to Immich 1.135.3"}
+    server.statuses["/api/server/version"] = 404   # Immich before 1.107
+    result = fake.test_config({"url": "https://photos.example.org", "api_key": KEY})
+    assert result == {"ok": True, "message": "Connected to Immich"}
+
+
+@pytest.mark.parametrize(("path", "status", "field", "text"), [
+    ("/api/search/metadata", 401, "api_key", "The server refused the API key."),
+    ("/api/search/metadata", 403, "api_key", "The API key lacks the permission asset.read."),
+    ("/thumbnail", 403, "api_key", "The API key lacks the permission asset.view."),
+    ("/api/", 404, "url", "No Immich server answers at this address."),
+    ("/api/server/version", 502, "url", "The Immich server reported an error."),
+])
+def test_test_config_marks_the_field(host, path, status, field, text) -> None:
+    _store, server, fake = host
+    server.statuses[path] = status
+    result = fake.test_config({"url": "https://photos.example.org", "api_key": KEY})
+    assert result["ok"] is False and result["errors"] == {field: text}
+    assert result["message"] == text
+    fake.assert_never_sent(KEY)
+
+
+def test_test_config_refuses_plain_http(host) -> None:
+    _store, server, fake = host
+    result = fake.test_config({"url": "http://photos.example.org", "api_key": KEY})
+    assert result["ok"] is False and "url" in result["errors"]
+    assert server.requests == []

@@ -1,29 +1,39 @@
 [BlueFerry Plugin]
 Id=io.weirdware.blueferry.immich_photos
 Name=Immich photos
-Version=0.2.2
-ApiVersion=1.1
-MinBlueFerry=0.8
+Version=0.3.0
+ApiVersion=1.3
+MinBlueFerry=0.8.1
 Capabilities=photos;
 Homepage=https://github.com/joshii-h/blueferry-plugin-immich
 Source=https://github.com/joshii-h/blueferry-plugin-immich
 Exec=blueferry-immich-photos serve
 Cli=blueferry-immich-photos
 Alias=immich
+ConfigTest=true
 
 [Config url]
 Label=Server URL
 Type=url
 Required=true
-Help=Your Immich address, for example https://photos.example.org
+Group=account
+Placeholder=https://photos.example.com
+Example=https://immich.example.com or http://localhost:2283
+Help=The address you open Immich at in the browser.
 
 [Config api_key]
 Label=API key
 Type=secret
 Required=true
-Help=Immich > Account Settings > API Keys, with asset.read, asset.view and asset.download
+Group=account
+Pattern=[A-Za-z0-9]{20,100}
+ErrorText=Copy the whole key without spaces.
+Help=In Immich: Account Settings > API Keys > New API Key, with asset.read, asset.view and asset.download.
+HelpUrl=https://docs.immich.app/features/command-line-interface#obtain-the-api-key
 
 [Config camera_model]
-Label=Camera model
+Label=Only this camera
 Type=string
-Help=Optional: only list photos from this camera, for example iPhone 16 Pro
+Group=options
+Placeholder=iPhone 16 Pro
+Help=Leave empty for all devices.
