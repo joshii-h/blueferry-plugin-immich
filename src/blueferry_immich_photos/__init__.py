@@ -8,7 +8,7 @@ from __future__ import annotations
 from importlib import resources
 
 PLUGIN_ID = "io.weirdware.blueferry.immich_photos"
-__version__ = "0.2.2"
+__version__ = "0.3.0"
 
 
 def manifest_text() -> str:
