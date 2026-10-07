@@ -14,8 +14,8 @@ requires-python = ">=3.10"
 # libsecret come from the distribution (BlueFerry creates the plugin's venv
 # with --system-site-packages).
 dependencies = [
-  "blueferry-plugin-api @ git+https://github.com/joshii-h/blueferry@plugin-api-v1.2.0#subdirectory=plugin-api",
-  "blueferry-plugin-kit @ git+https://github.com/joshii-h/blueferry-plugin-kit@kit-v0.1.0",
+  "blueferry-plugin-api @ git+https://github.com/joshii-h/blueferry@plugin-api-v1.3.0#subdirectory=plugin-api",
+  "blueferry-plugin-kit @ git+https://github.com/joshii-h/blueferry-plugin-kit@kit-v0.2.0",
 ]
 
 [project.optional-dependencies]
