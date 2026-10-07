@@ -8,28 +8,27 @@ manifest, D-Bus replies or command lines.
 from __future__ import annotations
 
 import json
-import os
-import stat
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from blueferry_plugin_kit.secrets import (
+    KeyringStore,
+    SecretsError,
+    read_private_text,
+    write_private,
+)
+from blueferry_plugin_kit.secrets import config_dir as _kit_config_dir
+
 from blueferry_immich_photos import PLUGIN_ID
 
 SCHEMA = "io.weirdware.blueferry.immich_photos.ApiKey"
-MAX_FILE_BYTES = 16 * 1024
 
-
-class SettingsError(Exception):
-    pass
+SettingsError = SecretsError
 
 
 def config_dir() -> Path:
-    config_home = os.environ.get("XDG_CONFIG_HOME") or os.path.join(
-        os.path.expanduser("~"), ".config"
-    )
-    return Path(config_home) / "blueferry" / "plugins" / PLUGIN_ID
+    return _kit_config_dir(PLUGIN_ID)
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,49 +38,14 @@ class Settings:
     camera_model: str = ""  # optional: only assets from this camera model
 
 
-def _private_dir(path: Path) -> Path:
-    path.mkdir(parents=True, exist_ok=True, mode=0o700)
-    info = os.lstat(path)
-    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid():
-        raise SettingsError("config directory has the wrong owner or type")
-    path.chmod(0o700)
-    return path
+class SettingsStore(KeyringStore):
+    SECRET_SCHEMA = SCHEMA
+    SECRET_ATTRIBUTES = ("server",)
+    SECRET_LABEL = "BlueFerry Immich API key"
 
-
-def _write_private(path: Path, text: str) -> None:
-    _private_dir(path.parent)
-    descriptor, temporary = tempfile.mkstemp(prefix=".tmp-", dir=path.parent)
-    try:
-        os.fchmod(descriptor, 0o600)
-        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-            descriptor = -1
-            stream.write(text)
-        os.replace(temporary, path)
-    finally:
-        if descriptor >= 0:
-            os.close(descriptor)
-        Path(temporary).unlink(missing_ok=True)
-
-
-def _read_private(path: Path) -> str:
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
-    descriptor = os.open(path, flags)
-    with os.fdopen(descriptor, "r", encoding="utf-8") as stream:
-        info = os.fstat(stream.fileno())
-        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
-            raise SettingsError(f"{path.name} has the wrong owner or type")
-        if stat.S_IMODE(info.st_mode) & 0o077:
-            raise SettingsError(f"{path.name} is readable by other users")
-        text = stream.read(MAX_FILE_BYTES + 1)
-    if len(text) > MAX_FILE_BYTES:
-        raise SettingsError(f"{path.name} is too large")
-    return text
-
-
-class SettingsStore:
     def __init__(self, directory: Path | None = None, *, secret: Any = None) -> None:
-        self.directory = directory or config_dir()
-        self._secret = secret  # gi.repository.Secret, injectable for tests
+        # secret: gi.repository.Secret, injectable for tests
+        super().__init__(directory or config_dir(), secret=secret)
 
     @property
     def config_path(self) -> Path:
@@ -93,7 +57,7 @@ class SettingsStore:
 
     def load(self) -> Settings | None:
         try:
-            raw = json.loads(_read_private(self.config_path))
+            raw = json.loads(read_private_text(self.config_path))
         except FileNotFoundError:
             return None
         except ValueError:
@@ -109,28 +73,21 @@ class SettingsStore:
 
     def save(self, settings: Settings, api_key: str, *, prefer_keyring: bool = True) -> str:
         """Store the key (keyring first) and the config; return the key store."""
-        store = "file"
-        if prefer_keyring and self._store_keyring(settings.url, api_key):
-            store = "keyring"
-            self.key_path.unlink(missing_ok=True)
-        else:
-            _write_private(self.key_path, api_key + "\n")
-        _write_private(self.config_path, json.dumps({
+        store = self.save_secret(
+            {"server": settings.url}, api_key, prefer_keyring=prefer_keyring,
+        )
+        write_private(self.config_path, json.dumps({
             "url": settings.url, "key_store": store, "camera_model": settings.camera_model,
         }, indent=2) + "\n")
         return store
 
     def api_key(self, settings: Settings) -> str:
-        if settings.key_store == "file":
-            try:
-                key = _read_private(self.key_path).strip()
-            except FileNotFoundError:
-                raise SettingsError("the API key file is missing; run setup again") from None
-        else:
-            key = self._lookup_keyring(settings.url)
-        if not key:
-            raise SettingsError("no API key stored; run setup again")
-        return key
+        return self.load_secret(
+            settings.key_store, {"server": settings.url},
+            missing="the API key file is missing; run setup again",
+            empty="no API key stored; run setup again",
+            strip=True,
+        )
 
     def forget(self) -> None:
         settings = None
@@ -139,64 +96,10 @@ class SettingsStore:
         except SettingsError:
             pass
         if settings is not None and settings.key_store == "keyring":
-            secret = self._module()
-            if secret is not None:
-                try:
-                    secret.password_clear_sync(self._schema(secret), {"server": settings.url}, None)
-                except Exception:  # nosec B110 - best effort; the config goes regardless
-                    pass
+            self.clear_keyring({"server": settings.url})
         self.key_path.unlink(missing_ok=True)
         self.config_path.unlink(missing_ok=True)
 
     def forget_keyring(self, url: str) -> None:
         """Drop the keyring entry of a server URL that is no longer used."""
-        secret = self._module()
-        if secret is None:
-            return
-        try:
-            secret.password_clear_sync(self._schema(secret), {"server": url}, None)
-        except Exception:  # nosec B110 - best effort
-            pass
-
-    # ---- libsecret -------------------------------------------------------------
-
-    def _module(self) -> Any:
-        if self._secret is not None:
-            return self._secret
-        try:
-            import gi
-
-            gi.require_version("Secret", "1")
-            from gi.repository import Secret
-        except (ImportError, ValueError):
-            return None
-        self._secret = Secret
-        return Secret
-
-    @staticmethod
-    def _schema(secret: Any) -> Any:
-        return secret.Schema.new(
-            SCHEMA, secret.SchemaFlags.NONE, {"server": secret.SchemaAttributeType.STRING},
-        )
-
-    def _store_keyring(self, url: str, api_key: str) -> bool:
-        secret = self._module()
-        if secret is None:
-            return False
-        try:
-            return bool(secret.password_store_sync(
-                self._schema(secret), {"server": url}, secret.COLLECTION_DEFAULT,
-                "BlueFerry Immich API key", api_key, None,
-            ))
-        except Exception:
-            return False
-
-    def _lookup_keyring(self, url: str) -> str:
-        secret = self._module()
-        if secret is None:
-            raise SettingsError("no Secret Service client is installed")
-        try:
-            value = secret.password_lookup_sync(self._schema(secret), {"server": url}, None)
-        except Exception:
-            raise SettingsError("the desktop keyring is locked or unavailable") from None
-        return str(value or "")
+        self.clear_keyring({"server": url})
