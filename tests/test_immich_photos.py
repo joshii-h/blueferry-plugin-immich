@@ -14,6 +14,7 @@ import pytest
 from blueferry.plugin_api.client import PluginClient, PluginError
 from blueferry.plugin_api.manifest import parse_manifest
 from blueferry.plugin_api.testing import ServiceTransport, inline_service
+from blueferry_plugin_kit.testing import FakeSecret
 
 from blueferry_immich_photos import PLUGIN_ID, manifest_text
 from blueferry_immich_photos import __main__ as cli
@@ -158,36 +159,8 @@ def test_settings_fall_back_to_an_owner_only_key_file(tmp_path) -> None:
     assert store.load() is None
 
 
-class _FakeSecret:
-    COLLECTION_DEFAULT = "default"
-
-    class SchemaFlags:
-        NONE = 0
-
-    class SchemaAttributeType:
-        STRING = 0
-
-    class Schema:
-        @staticmethod
-        def new(name, _flags, _attributes):
-            return name
-
-    def __init__(self) -> None:
-        self.items: dict[tuple, str] = {}
-
-    def password_store_sync(self, schema, attributes, _collection, _label, value, _c):
-        self.items[(schema, tuple(attributes.items()))] = value
-        return True
-
-    def password_lookup_sync(self, schema, attributes, _c):
-        return self.items.get((schema, tuple(attributes.items())))
-
-    def password_clear_sync(self, schema, attributes, _c):
-        return self.items.pop((schema, tuple(attributes.items())), None) is not None
-
-
 def test_settings_prefer_the_keyring(tmp_path) -> None:
-    secret = _FakeSecret()
+    secret = FakeSecret()
     store = SettingsStore(tmp_path / "conf", secret=secret)
     assert store.save(Settings("https://p.example.org", "keyring"), "k3y") == "keyring"
     assert not store.key_path.exists()
@@ -199,7 +172,7 @@ def test_settings_prefer_the_keyring(tmp_path) -> None:
 
 @pytest.fixture
 def plugin(tmp_path):
-    secret = _FakeSecret()
+    secret = FakeSecret()
     store = SettingsStore(tmp_path / "conf", secret=secret)
     server = _Server()
     cache_root = tmp_path / "cache" / "blueferry"
@@ -277,7 +250,7 @@ def test_setup_stores_the_key_and_installs_activation(tmp_path, monkeypatch) -> 
     monkeypatch.setenv("XDG_DATA_DIRS", str(tmp_path / "system"))
     monkeypatch.setattr(cli, "_command", lambda: ["/opt/bin/blueferry-immich-photos"])
     monkeypatch.setattr("sys.stdin", io.StringIO("k3y\n"))
-    store = SettingsStore(tmp_path / "conf", secret=_FakeSecret())
+    store = SettingsStore(tmp_path / "conf", secret=FakeSecret())
     args = argparse.Namespace(url="https://photos.example.org/", api_key_stdin=True,
                               no_verify=True, camera_model="", key_file=False)
     assert cli.setup(args, store) == 0
