@@ -12,9 +12,8 @@ requires-python = ">=3.10"
 # Only blueferry.plugin_api is used. dbus-python, PyGObject and libsecret
 # come from the distribution (BlueFerry creates the plugin's venv with
 # --system-site-packages).
-# The ref is a branch for now; switch it to a BlueFerry release tag.
 dependencies = [
-  "blueferry-plugin-api @ git+https://github.com/joshii-h/blueferry@local/battlestation#subdirectory=plugin-api",
+  "blueferry-plugin-api @ git+https://github.com/joshii-h/blueferry@plugin-api-v1.2.0#subdirectory=plugin-api",
 ]
 
 [project.optional-dependencies]
