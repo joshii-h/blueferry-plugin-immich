@@ -281,7 +281,7 @@ def test_plugin_imports_only_the_plugin_api_from_blueferry() -> None:
 
 def test_manifest_describes_the_settings_form() -> None:
     manifest = parse_manifest(manifest_text())
-    assert manifest.api_minor == 1 and manifest.version == "0.2.1"
+    assert manifest.api_minor == 1 and manifest.version == "0.2.2"
     fields = {field.key: field for field in manifest.config}
     assert list(fields) == ["url", "api_key", "camera_model"]
     assert fields["url"].type == "url" and fields["url"].required
