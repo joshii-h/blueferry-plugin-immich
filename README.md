@@ -70,11 +70,11 @@ python3 -m venv --system-site-packages .venv   # dbus-python, PyGObject, libsecr
 .venv/bin/ruff check . && .venv/bin/python -m pytest -q
 ```
 
-`blueferry-plugin-api` (tag `plugin-api-v1.4.0`, the guided settings form
+`blueferry-plugin-api` (tag `plugin-api-v1.5.0`, the guided settings form
 and `TestConfig`) comes from the `plugin-api` directory of the BlueFerry
-repository, shared helpers from `blueferry-plugin-kit` (`kit-v0.3.0`). The
-settings form needs a BlueFerry with plugin API 1.3; older ones ignore the
-plugin with a message. Tests use fake HTTP, keyring and cache; the plugin has
+repository, shared helpers from `blueferry-plugin-kit` (`kit-v0.4.0`). The
+manifest declares plugin API 1.5, so the plugin needs a BlueFerry that knows
+1.5; older ones ignore it with a message. Tests use fake HTTP, keyring and cache; the plugin has
 not been tested against a live Immich server yet.
 
 ## License
