@@ -73,9 +73,10 @@ python3 -m venv --system-site-packages .venv   # dbus-python, PyGObject, libsecr
 `blueferry-plugin-api` (tag `plugin-api-v1.5.0`, the guided settings form
 and `TestConfig`) comes from the `plugin-api` directory of the BlueFerry
 repository, shared helpers from `blueferry-plugin-kit` (`kit-v0.4.0`). The
-manifest declares plugin API 1.5, so the plugin needs a BlueFerry that knows
-1.5; older ones ignore it with a message. Tests use fake HTTP, keyring and cache; the plugin has
-not been tested against a live Immich server yet.
+plugin sends no popups, so its manifest stays at plugin API 1.4: it runs on
+any BlueFerry that knows 1.4 or newer (1.5 included); older ones ignore it
+with a message. Tests use fake HTTP, keyring and cache; the plugin has not
+been tested against a live Immich server yet.
 
 ## License
 
